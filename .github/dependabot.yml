@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Go modules: none today (stdlib only), but a dependency added later is
+  # watched from the start.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+  # The SHA-pinned actions in .github/workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

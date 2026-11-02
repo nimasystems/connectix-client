@@ -1,0 +1,8 @@
+# Test and coverage output
+/coverage.out
+/coverage.html
+*.test
+
+# Local secrets: never commit a token
+.env
+*.env
