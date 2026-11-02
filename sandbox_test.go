@@ -3,6 +3,7 @@ package connectix
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -24,11 +25,47 @@ func digitsFor(slot string) string {
 	return "1"
 }
 
+// isSandboxHost reports whether base names a host this test may send to: one
+// whose name contains "sandbox", or a loopback host. The test sends a message
+// to a real-looking mobile number, so it must never reach the live host,
+// whatever CONNECTIX_SANDBOX_BASE_URL says.
+func isSandboxHost(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(u.Hostname()), "sandbox") || isLoopback(u.Hostname())
+}
+
+func TestTheSandboxTestSendsOnlyToASandboxOrLoopbackHost(t *testing.T) {
+	tests := map[string]bool{
+		defaultSandboxBaseURL:              true,
+		"https://API-SANDBOX.connectix.bg": true,
+		"http://127.0.0.1:8080":            true,
+		"http://localhost:8080":            true,
+		"http://[::1]:8080":                true,
+		"https://api.connectix.bg":         false, // the live host
+		"https://api.connectix.bg/sandbox": false, // "sandbox" in the path is not the host
+		"https://sandbox@api.connectix.bg": false, // nor is it the userinfo
+		"https://example.com":              false,
+		"":                                 false,
+		"not a url":                        false,
+		"/sandbox":                         false,
+	}
+	for base, want := range tests {
+		if got := isSandboxHost(base); got != want {
+			t.Errorf("isSandboxHost(%q) = %v, want %v", base, got, want)
+		}
+	}
+}
+
 // TestTheSandboxAcceptsASendAndReturnsItsStatus talks to the real sandbox. It
 // runs only when CONNECTIX_SANDBOX_TOKEN is set (CONNECTIX_SANDBOX_BASE_URL
-// overrides the host) and is skipped otherwise, so CI needs no secret. It
-// calls Me, ListTemplates, SendMessage and GetMessage only: the sandbox
-// shares the company's real templates, and delivers and bills nothing.
+// is optional and defaults to the sandbox host) and is skipped otherwise, so
+// CI needs no secret. It fails, and sends nothing, when the base URL is
+// neither a sandbox host nor loopback. It calls Me, ListTemplates,
+// SendMessage and GetMessage only: the sandbox shares the company's real
+// templates, and delivers and bills nothing.
 func TestTheSandboxAcceptsASendAndReturnsItsStatus(t *testing.T) {
 	token := os.Getenv("CONNECTIX_SANDBOX_TOKEN")
 	if token == "" {
@@ -37,6 +74,9 @@ func TestTheSandboxAcceptsASendAndReturnsItsStatus(t *testing.T) {
 	base := os.Getenv("CONNECTIX_SANDBOX_BASE_URL")
 	if base == "" {
 		base = defaultSandboxBaseURL
+	}
+	if !isSandboxHost(base) {
+		t.Fatal("CONNECTIX_SANDBOX_BASE_URL names a host that is neither a sandbox nor loopback: refusing to send") // never echo the URL
 	}
 	c, err := New(token, WithBaseURL(base))
 	if err != nil {

@@ -33,12 +33,18 @@ library does; this file says how to change it.
 - No real network in tests, and no real token anywhere: tests use the
   placeholder `testToken`. The one exception is `sandbox_test.go`, which
   talks to the Connectix sandbox only when `CONNECTIX_SANDBOX_TOKEN` is set
-  (and `CONNECTIX_SANDBOX_BASE_URL` names another host) and is skipped
-  otherwise, so CI needs no secret. Run it locally with the token in the
-  environment; never print, log or commit it.
+  and is skipped otherwise, so CI needs no secret. `CONNECTIX_SANDBOX_BASE_URL`
+  is optional and defaults to `https://api-sandbox.connectix.bg`; the test
+  runs only against a sandbox host (a name containing `sandbox`, or
+  loopback) and fails without sending anything for any other. Run it locally
+  with the token in the environment; never print, log or commit it.
 - The sandbox shares the company's real application data for templates. The
   sandbox test calls `Me`, `ListTemplates`, `SendMessage` and `GetMessage`
   only: it delivers and bills nothing.
+- No test calls `RegisterIntegration`, `RegisterHook` or `UnregisterHook`
+  against Connectix, and nothing runs `cmd/connectix` against it: they act on
+  the company's real application data, which the sandbox shares with
+  production. Their tests use `httptest` servers only.
 - Inject the clock: code that compares against "now" uses `Client.now`
   (`withNow` in tests), never `time.Now` directly, so tests run on a fixed
   time.
