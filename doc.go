@@ -7,9 +7,15 @@
 // from a template and an optional idempotency key; [Client.GetMessage] reads
 // a message with its current status; [Client.ListTemplates] lists the
 // templates with the slots each one needs; [Client.Me] verifies a token and
-// the host it is used against. The rest of the API (fallback flows, media
-// messages, one-time passwords, the blacklist, TrustCheck, shipments,
-// integrations and hooks) is not covered; the README keeps the list.
+// the host it is used against.
+//
+// [Client.RegisterIntegration], [Client.RegisterHook] and
+// [Client.UnregisterHook] set up the webhooks that report a message's
+// status, and [VerifyWebhook] and [ParseCallback] receive them: verify the
+// raw body's signature first, then decode. The command cmd/connectix does the
+// one-time set-up. The rest of the API (fallback flows, media messages,
+// one-time passwords, the blacklist, TrustCheck, shipments) is not covered;
+// the README keeps the list.
 //
 // There is no default base URL: the sandbox and the production host have
 // different tokens, so [New] needs [WithBaseURL] and never guesses which

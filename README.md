@@ -1,8 +1,10 @@
 # connectix-client
 
 A small Go client for the [Connectix](https://connectix.bg/) messaging API:
-send one message from an approved template, read it back, list the templates
-and check a token.
+send one message from an approved template, read it back, list the templates,
+check a token, register an integration and its webhook hooks, and verify the
+signed deliveries those hooks receive. A small command, `connectix`, does the
+one-time set-up.
 
 It was written for sending phone-verification codes by SMS from a Go backend,
 and it covers that job well rather than the whole API. It is built to grow:
@@ -91,6 +93,79 @@ client with `New`: the methods of a zero `Client{}` return an error.
   once each, in order of first appearance; every one needs a value in
   `Parameters`.
 
+## Integrations and signed webhooks
+
+An integration groups the messages one system sends and owns the webhook
+hooks that report on them. Set it up once, then send with its token so the
+hooks hear of each message's status.
+
+| Method | Operation |
+|---|---|
+| `RegisterIntegration(ctx, kind, platform, secret)` | `POST /integration/register`; returns the integration token |
+| `RegisterHook(ctx, integrationToken, hookType, url)` | `POST /integration/register/hook`; returns the hook's id |
+| `UnregisterHook(ctx, id)` | `POST /integration/unregister/hook` |
+
+- `kind` is `custom`, `ecommerce` or `automation`; `secret` is **your own 32
+  bytes of printable ASCII** (no spaces), which Connectix keeps and signs
+  every delivery with. Registering again with the same secret returns the same
+  integration and token, so a lost token is recovered by repeating the call.
+- `hookType` is `callback` (delivery status), `inbound`, `template`,
+  `tracking` or `blacklist`; register one hook per type. The URL must be
+  public: Connectix refuses a private, loopback or link-local address with a
+  422 (`ErrValidation`).
+- The integration token and the secret are credentials. Neither is put in an
+  error. Pass the token as `SendMessageRequest.Integration`.
+
+Connectix signs a delivery to an integration hook with the headers
+`X-Connectix-Timestamp` (Unix seconds) and `X-Connectix-Signature` (`v1=` and
+the hex HMAC-SHA256 of `"<timestamp>.<raw body>"` keyed with the secret).
+Verify the **raw** body before you decode it:
+
+```go
+body, _ := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+err := connectix.VerifyWebhook(secret, // the 32 bytes chosen at registration
+	r.Header.Get("X-Connectix-Timestamp"),
+	r.Header.Get("X-Connectix-Signature"),
+	body, time.Now())
+if err != nil { // ErrBadSignature or ErrStaleTimestamp
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return
+}
+cb, err := connectix.ParseCallback(body) // a "callback" hook's body
+// answer 2xx at once, then deduplicate on cb.EventID and order by cb.CreatedAt
+```
+
+`VerifyWebhook` compares in constant time, accepts a timestamp within 5
+minutes of `now` either way, and checks the signature first. It does not stop
+a replay inside the window: delivery is at-least-once anyway, so drop repeats
+on `Callback.EventID`. Deliveries to a per-message `callbackUrl` are not
+signed; validate their `id` against your own records.
+
+## The set-up command
+
+```sh
+go install github.com/nimasystems/connectix-client/cmd/connectix@latest
+
+export CONNECTIX_TOKEN=...                      # the application's token for the host
+export CONNECTIX_BASE_URL=https://api-sandbox.connectix.bg
+
+connectix me                                    # the application's name
+connectix templates                             # id, name, channel, status, slots; never the text
+printf '%s' "$SECRET32" | connectix register-integration --platform "My system" --out integration.token
+connectix register-hook --url https://example.com/hooks/connectix < integration.token   # prints the hook's id
+connectix unregister-hook --id <hook id>
+```
+
+- Secrets are never arguments (a process list shows those). The secret comes
+  on standard input; the integration token is written to the `--out` file
+  (mode 0600, refused if it exists) and never printed; `register-hook` reads
+  it from standard input and prints only the hook's id.
+- Exit codes: 0 done, 1 the call failed (the message names the HTTP status,
+  never the body), 2 refused before calling.
+- **The sandbox is not a sandbox for these.** The sandbox host takes its own
+  token, but the integration and hook calls act on the application's real
+  data, which the sandbox shares with production. Register once, on purpose.
+
 ## Errors
 
 A non-2xx answer is an `*APIError` with `Status`, `Message` (Connectix's
@@ -130,7 +205,11 @@ dial, DNS, a TLS handshake, a context already done) is not this.
 | One-time passwords (`/otp/*`) | no |
 | Blacklist, TrustCheck (`/blacklist*`, `/shopper/check`) | no |
 | Shipments (`/shipments`) | no |
-| Integrations and hooks (`/integration/*`) and the webhooks | no |
+| `registerIntegration` (`POST /integration/register`) | yes |
+| `registerIntegrationHook`, `unregisterIntegrationHook` (`POST /integration/register/hook`, `/integration/unregister/hook`) | yes |
+| `unregisterIntegration` (`POST /integration/unregister`) | no |
+| Webhook signature (`x-webhooks`) and the `callback` payload | yes: `VerifyWebhook`, `ParseCallback` |
+| The `inbound`, `template`, `tracking` and `blacklist` payloads | no: verify with `VerifyWebhook`, decode yourself |
 
 ## Contributing
 
