@@ -328,3 +328,52 @@ func TestACommandFailureNamesTheStatusAndNeverTheBody(t *testing.T) {
 		}
 	}
 }
+
+func TestTheBalanceCommandPrintsTheAmounts(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/balance" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"currency":"EUR","total":"203.4500","threshold":"50.0000","lowBalance":true,"channels":{"viber":{"available":"23.4500","own":"23.4500","pool":null,"low":true},"sms":{"available":"180.0000","own":"100.0000","pool":"80.0000","low":false}},"pools":[{"name":"Main top-up","channel":"sms","balance":"80.0000"}]}`))
+	})
+	got := h.run("", "balance")
+	if got.code != 0 {
+		t.Fatalf("exit %d, stderr %q", got.code, got.errOut)
+	}
+	want := "currency\tEUR\ntotal\t203.4500\nthreshold\t50.0000\nlowBalance\ttrue\nsms\t180.0000\tfalse\nviber\t23.4500\ttrue\n"
+	if got.out != want {
+		t.Errorf("stdout =\n%q\nwant\n%q", got.out, want)
+	}
+	if strings.Contains(got.out+got.errOut, testToken) {
+		t.Error("the output carries the token")
+	}
+}
+
+func TestTheBalanceCommandPrintsNoThresholdAsADash(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"currency":"EUR","total":"0.0000","threshold":null,"lowBalance":false,"channels":{},"pools":[]}`))
+	})
+	got := h.run("", "balance")
+	want := "currency\tEUR\ntotal\t0.0000\nthreshold\t-\nlowBalance\tfalse\n"
+	if got.code != 0 || got.out != want {
+		t.Errorf("exit %d, stdout %q, want %q", got.code, got.out, want)
+	}
+}
+
+func TestTheBalanceCommandReportsAFailureWithoutTheBody(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`"secret reason"`))
+	})
+	got := h.run("", "balance")
+	if got.code != 1 || !strings.Contains(got.errOut, "HTTP 401") || strings.Contains(got.errOut, "secret reason") {
+		t.Errorf("exit %d, stderr %q", got.code, got.errOut)
+	}
+}
+
+func TestTheBalanceCommandTakesNoArguments(t *testing.T) {
+	h := newHarness(t, noCalls(t))
+	if got := h.run("", "balance", "extra"); got.code != 2 {
+		t.Errorf("exit %d, want 2", got.code)
+	}
+}

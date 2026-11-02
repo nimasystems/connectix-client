@@ -17,7 +17,7 @@ each new operation is added the same way, with tests (see
 - Safe for concurrent use.
 - The token never appears in errors, in `fmt` output with any verb, or in
   `log/slog`.
-- Written against the API document version 1.2.0, kept in
+- Written against the API document version 1.3.0, kept in
   [`testdata/openapi.json`](testdata/openapi.json).
 
 > **Not affiliated with Connectix.** This is an independent, open-source
@@ -80,6 +80,7 @@ client with `New`: the methods of a zero `Client{}` return an error.
 | `GetMessage(ctx, id)` | `GET /messages/{id}` |
 | `ListTemplates(ctx)` | `GET /templates` |
 | `Me(ctx)` | `GET /me` |
+| `Balance(ctx)` | `GET /balance` |
 
 - `SendMessageRequest.Integration` goes to the query `integration`; the other
   fields go to the JSON body under Connectix's names. Empty fields are left
@@ -89,6 +90,17 @@ client with `New`: the methods of a zero `Client{}` return an error.
   nothing a second time.
 - `Message.RateLimitRemaining` is the `X-RateLimit-Remaining` header, `-1`
   when absent. `Message.Raw` is the answer exactly as received.
+- `Balance` returns the funds the application can spend, per channel, as
+  Connectix's decimal strings in EUR (four decimals, never floats):
+  `Currency`, `Total`, `Threshold` (nil when none is set), `LowBalance`,
+  `Channels` (a map keyed `sms`, `viber`, `noti`, empty when the application
+  has no active service) and `Pools`. A channel's `Available` is what the
+  send-time check uses, `Own` plus `Pool`; `ChannelBalance.AvailableCents()`
+  reads it as whole cents rounding toward zero, for a comparison with a
+  floor, and refuses a malformed amount without quoting it. It is a snapshot,
+  not a reservation, and on the sandbox host the sandbox token returns the
+  application's real balance. `Balance.RateLimitRemaining` and `Raw` work as
+  on `Message`.
 - `Template.Slots` lists the `{{ name }}` variables in the template text,
   once each, in order of first appearance; every one needs a value in
   `Parameters`.
@@ -151,6 +163,7 @@ export CONNECTIX_BASE_URL=https://api-sandbox.connectix.bg
 
 connectix me                                    # the application's name
 connectix templates                             # id, name, channel, status, slots; never the text
+connectix balance                               # currency, total, threshold, lowBalance, then channel, available, low
 printf '%s' "$SECRET32" | connectix register-integration --platform "My system" --out integration.token
 connectix register-hook --url https://example.com/hooks/connectix < integration.token   # prints the hook's id
 connectix unregister-hook --id <hook id>
@@ -200,6 +213,7 @@ dial, DNS, a TLS handshake, a context already done) is not this.
 | `getMessage` (`GET /messages/{id}`) | yes |
 | `listTemplates` (`GET /templates`) | yes |
 | `getMe` (`GET /me`) | yes |
+| `getBalance` (`GET /balance`) | yes |
 | `listMessages` (`GET /messages`) | no |
 | `sendFallbackMessage`, `sendMediaMessage` | no |
 | One-time passwords (`/otp/*`) | no |

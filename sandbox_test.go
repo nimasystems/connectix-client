@@ -63,8 +63,8 @@ func TestTheSandboxTestSendsOnlyToASandboxOrLoopbackHost(t *testing.T) {
 // runs only when CONNECTIX_SANDBOX_TOKEN is set (CONNECTIX_SANDBOX_BASE_URL
 // is optional and defaults to the sandbox host) and is skipped otherwise, so
 // CI needs no secret. It fails, and sends nothing, when the base URL is
-// neither a sandbox host nor loopback. It calls Me, ListTemplates,
-// SendMessage and GetMessage only: the sandbox shares the company's real
+// neither a sandbox host nor loopback. It calls Me, Balance, ListTemplates,
+// SendMessage and GetMessage only (Balance is a read): the sandbox shares the company's real
 // templates, and delivers and bills nothing.
 func TestTheSandboxAcceptsASendAndReturnsItsStatus(t *testing.T) {
 	token := os.Getenv("CONNECTIX_SANDBOX_TOKEN")
@@ -87,6 +87,24 @@ func TestTheSandboxAcceptsASendAndReturnsItsStatus(t *testing.T) {
 	name, err := c.Me(ctx)
 	if err != nil || name == "" {
 		t.Fatalf("Me = %q, %v; want the application's name", name, err)
+	}
+
+	// The sandbox token returns the application's real balance and a sandbox
+	// send never changes it. The amounts are not secrets, but none is logged.
+	bal, err := c.Balance(ctx)
+	if err != nil {
+		t.Fatalf("Balance: %v", err)
+	}
+	if bal.Currency != "EUR" || !regexp.MustCompile(`^-?\d+\.\d{4}$`).MatchString(bal.Total) || bal.Channels == nil {
+		t.Errorf("Balance = currency %q, total shaped %v, channels nil %v", bal.Currency, regexp.MustCompile(`^-?\d+\.\d{4}$`).MatchString(bal.Total), bal.Channels == nil)
+	}
+	for name, ch := range bal.Channels {
+		if _, err := ch.AvailableCents(); err != nil {
+			t.Errorf("channel %s: AvailableCents: %v", name, err)
+		}
+	}
+	if strings.Contains(string(bal.Raw), token) {
+		t.Error("the balance answer carries the token")
 	}
 
 	templates, err := c.ListTemplates(ctx)

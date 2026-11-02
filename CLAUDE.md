@@ -39,7 +39,7 @@ library does; this file says how to change it.
   loopback) and fails without sending anything for any other. Run it locally
   with the token in the environment; never print, log or commit it.
 - The sandbox shares the company's real application data for templates. The
-  sandbox test calls `Me`, `ListTemplates`, `SendMessage` and `GetMessage`
+  sandbox test calls `Me`, `Balance` (a read), `ListTemplates`, `SendMessage` and `GetMessage`
   only: it delivers and bills nothing.
 - No test calls `RegisterIntegration`, `RegisterHook` or `UnregisterHook`
   against Connectix, and nothing runs `cmd/connectix` against it: they act on
@@ -85,7 +85,7 @@ library does; this file says how to change it.
 ## Adding an endpoint
 
 1. Read the operation in `testdata/openapi.json` (the API document, version
-   1.2.0, from https://mcp.connectix.bg/openapi.json) and note any doubt (an
+   1.3.0, from https://mcp.connectix.bg/openapi.json) and note any doubt (an
    undocumented field, a conflicting limit) in the pull request and in the
    README. Refresh the file when Connectix publishes a new version, and say
    so in the commit.

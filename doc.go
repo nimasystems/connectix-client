@@ -1,5 +1,5 @@
 // Package connectix is a small client for the Connectix messaging API
-// (https://mcp.connectix.bg/openapi.json, version 1.2.0): it sends one
+// (https://mcp.connectix.bg/openapi.json, version 1.3.0): it sends one
 // message from an approved template, reads a message back, lists the
 // templates and names the application behind the token.
 //

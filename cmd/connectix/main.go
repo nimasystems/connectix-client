@@ -1,5 +1,5 @@
 // Command connectix is the set-up tool for a Connectix integration: it
-// checks a token, lists templates without their text, and registers or
+// checks a token, lists templates without their text, reads the balance, and registers or
 // removes the integration and its webhook hooks.
 //
 // It reads CONNECTIX_TOKEN (the application's token for the host) and
@@ -10,6 +10,7 @@
 //
 //	connectix me
 //	connectix templates
+//	connectix balance
 //	connectix register-integration --platform <name> --out <file> [--kind custom]   (secret on stdin)
 //	connectix register-hook --url <url> [--type callback]                           (integration token on stdin)
 //	connectix unregister-hook --id <id>
@@ -24,7 +25,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,6 +40,7 @@ const (
 commands:
   me                                     print the application's name
   templates                              print id, name, channel, status and slots of each template
+  balance                                print the currency, total, threshold, low-balance flag and each channel's available amount
   register-integration --platform <p> --out <file> [--kind custom|ecommerce|automation]
                                          read the 32-byte secret from stdin, write the integration token to <file>
   register-hook --url <url> [--type callback|inbound|template|tracking|blacklist]
@@ -71,7 +75,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	cmd, args := args[0], args[1:]
 	switch cmd {
-	case "me", "templates", "register-integration", "register-hook", "unregister-hook":
+	case "me", "templates", "balance", "register-integration", "register-hook", "unregister-hook":
 	default:
 		fmt.Fprintf(stderr, "connectix: unknown command\n\n%s", usage)
 		return 2
@@ -138,6 +142,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		for _, t := range templates { // never t.Text: it is the company's wording
 			fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\n", t.ID, t.Name, t.Channel, t.Status, strings.Join(t.Slots, ","))
 		}
+	case "balance":
+		return printBalance(ctx, client, stdout, stderr)
 	case "register-integration":
 		return registerIntegration(ctx, client, platform, kind, out, stdin, stdout, stderr)
 	case "register-hook":
@@ -155,6 +161,27 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return failed(stderr, err)
 		}
 		fmt.Fprintf(stdout, "unregistered %s\n", id)
+	}
+	return 0
+}
+
+// printBalance prints the balance as tab-separated lines: the currency, the
+// total, the threshold ("-" when none) and the low-balance flag, then one
+// line per channel, in name order: channel, available, low. Amounts are not
+// secrets.
+func printBalance(ctx context.Context, client *connectix.Client, stdout, stderr io.Writer) int {
+	b, err := client.Balance(ctx)
+	if err != nil {
+		return failed(stderr, err)
+	}
+	threshold := "-"
+	if b.Threshold != nil {
+		threshold = *b.Threshold
+	}
+	fmt.Fprintf(stdout, "currency\t%s\ntotal\t%s\nthreshold\t%s\nlowBalance\t%t\n", b.Currency, b.Total, threshold, b.LowBalance)
+	for _, name := range slices.Sorted(maps.Keys(b.Channels)) {
+		ch := b.Channels[name]
+		fmt.Fprintf(stdout, "%s\t%s\t%t\n", name, ch.Available, ch.Low)
 	}
 	return 0
 }
